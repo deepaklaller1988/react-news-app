@@ -2,6 +2,13 @@ import React, { useEffect, useState } from 'react';
 import './home.css'
 import axios from 'axios';
 import { useNavigate, Link } from "react-router-dom";
+import DatePicker from "react-datepicker";
+import Spinner from 'react-bootstrap/Spinner';
+
+import "react-datepicker/dist/react-datepicker.css";
+
+let baseUrl = `https://df45-112-196-51-235.ngrok-free.app`;
+let newsApiKey = "2316c55266114746a2ffd15b9237082f";
 
 function Home() {
     const [data,setData] = useState([]);
@@ -13,10 +20,13 @@ function Home() {
     const [checkedPreferences, setCheckedPreferences] = useState([]);
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [sources, setSources] = useState([]);
-    const [selectedDataSource, setSelectedDataSource] = useState('');
+    const [selectedDataSource, setSelectedDataSource] = useState('NewsAPI.ai');
     const [selectedSource, setSelectedSource] = useState();
     const [search, setSearch] = useState('')
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
+    const [isLoading,setIsLoading] = useState(false);
 
     const navigate = useNavigate();
 
@@ -25,8 +35,7 @@ function Home() {
         if(token){
             setAccessToken(token);
             getPreferences(token);
-            getSources();
-
+            // getSources();
         }else{
             navigate("/");
         }
@@ -35,7 +44,7 @@ function Home() {
 
     useEffect(()=>{
         fetchData();
-    },[currentPage, selectedSource, search])
+    },[currentPage, search])
 
     useEffect(()=>{
         if(selectedCategories.length > 0){
@@ -44,29 +53,30 @@ function Home() {
         }
     },[selectedCategories])
 
-    // useEffect(() =>{
-
-    // })
+    useEffect(() =>{
+        if(showPopup && selectedSource !== ''){
+            markChecked();
+        }
+    },[showPopup])
 
     const getPreferences = async (token) =>{
         const user = JSON.parse(localStorage.getItem("user"));
         const headers = {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
+            "Authorization": `Bearer ${token}`,
           };
   
-        console.log(user)
-        const baseUrl = `https://2c03-112-196-51-235.ngrok-free.app/backend-laravel-api`;
-        const url = `https://2c03-112-196-51-235.ngrok-free.app/backend-laravel-api/api/users/${user.id}/preferences`;
         const {data:res} = await axios.post(baseUrl + `/api/users/${user.id}/preferences`,{},{headers});
         const {data:source} = await axios.post(baseUrl + `/api/users/${user.id}/settings`,{},{headers});
 
-        console.log(res, source)
         if(res.success && source.success){
-            if(res.data[0].data.length === 0 && source.data.datasource !== ""){
+            if(res.data.length === 0 && !source.data){
                 setShowPopup(true);
             }else{
-                console.log(JSON.parse(res.data[0].data), source.data.datasource);
+                if(JSON.parse(res.data[0].data).length === 0){
+                    setShowPopup(true);
+                }
+                setIsLoading(false);
                 setCheckedPreferences(JSON.parse(res.data[0].data));
                 setSelectedCategories(JSON.parse(res.data[0].data));
                 setSelectedDataSource(source.data.datasource);
@@ -75,42 +85,211 @@ function Home() {
     }
 
     const fetchData = async () =>{
-        const headlines = await axios.get(`https://newsapi.org/v2/top-headlines?sources=abc-news&page=1&pageSize=10&apiKey=1e5458209dfa4d7abaf5a58f413292ac`);
+        const startdate = startDate !== '' ? formattedDate(startDate) : '';
+        const enddate = endDate !== '' ? formattedDate(endDate) : "";
+
+        if(selectedDataSource === 'NewsAPI.org'){
+        const headlines = await axios.get(`https://newsapi.org/v2/top-headlines?category=${selectedCategories.join(",")}&page=1&pageSize=10&apiKey=${newsApiKey}`);
         if(headlines.status === 200){
             setTopNews(headlines.data.articles.slice(0,3))
         }
-
-        const source = selectedSource !== '' ? selectedSource : "abc-news"
         
-        const res = await axios.get(`https://newsapi.org/v2/everything?q=${search}&sources=${selectedSource ? selectedSource : "abc-news"}&page=${currentPage}&pageSize=10&apiKey=1e5458209dfa4d7abaf5a58f413292ac`)
+        const res = await axios.get(`https://newsapi.org/v2/everything?q=${search}&sources=${selectedSource ? selectedSource : "abc-news"}&from=${startdate}&to=${enddate}&page=${currentPage}&pageSize=10&apiKey=${newsApiKey}`)
         if(res.status === 200){
             setData(res.data.articles)
             if( res.data.totalResults >= 100){
                 setPageCount(Math.ceil(100/10))
             }else{
                 setPageCount(Math.ceil(res.data.totalResults/10))
-            }
-            
+            } 
         }
+        }
+
+        if(selectedDataSource === 'NewsAPI.ai'){
+            const categoryUri = await getCategoryUri(selectedCategories);
+            // const sourceUri = selectedSource ? await getSourceUri(selectedSource) : null;
+            // const sourceUri =  await getSourceUri("bbc")
+
+        let requestBody = {
+            "action": "getArticles",
+            "categoryUri": categoryUri,
+            "articlesPage": 1,
+            "articlesCount": 100,
+            "articlesSortBy": "date",
+            "articlesSortByAsc": false,
+            "articlesArticleBodyLen": -1,
+            "resultType": "articles",
+            "lang":"eng",
+            "dataType": [
+              "news",
+              "pr"
+            ],
+            "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
+            "forceMaxDataTimeWindow": 31
+          }
+
+          if(selectedSource !== ''){
+            requestBody.sourceUri = selectedSource
+          }
+
+          if(search !== ''){
+            requestBody.keyword = search
+          }
+
+          if(startdate !== ''){
+            requestBody.dateStart = startdate
+          }
+
+          if(enddate !== ''){
+            requestBody.dateEnd = enddate
+          }
+        
+        const res = await axios.post(`http://eventregistry.org/api/v1/article/getArticles`,requestBody)
+          console.log(res)
+        if(res.status === 200){
+            if(res.data.articles){ 
+                setData(res.data.articles.results)
+                setTopNews(res.data.articles.results.slice(0,3))
+            if( res.data.articles.totalResults >= 100){
+                setPageCount(Math.ceil(100/10))
+            }else{
+                setPageCount(Math.ceil(res.data.totalResults/10))
+            } }
+        }
+        }
+
+        if(selectedDataSource === 'NY Times'){
+            const arr1 = ['Business', 'Sports'];
+            const arr = arr1.map((val)=>{
+                if(val === 'Entertainment'){
+                    return 'Movies'
+                }else if(val === 'General'){
+                    return 'Favorites'
+                }else{
+                    return val
+                }
+            })
+            const baseUrl = 'https://api.nytimes.com/svc/search/v2/articlesearch.json';
+            const params = {
+                fq: "section_name:Business",
+                fq: arr.map((category) => `news_desk:("${category}")`).join(' OR '),
+                // sort: 'newest',
+                "api-key": "AL5jWbBj302O6hoBEoswtihKPBEG37Te",
+            };
+
+  try {
+    const res = await axios.get(baseUrl, { params });
+    console.log(res)
+    if(res.status === 200){
+        if(res.data.response.docs){ 
+            setData(res.data.response.docs)
+            setTopNews(res.data.response.docs.slice(0,3))
+        if( res.data.response.docs.length >= 100){
+            setPageCount(Math.ceil(100/10))
+        }else{
+            setPageCount(Math.ceil(res.data.totalResults/10))
+        } }
+    }
+    // setArticles(response.data.response.docs);
+  } catch (error) {
+    console.error('Error fetching articles:', error);
+  }
+        }
+
+    }
+
+    const filterCategory = () =>{
+        const categories = Array.from(document.querySelectorAll('input[name="categories"]:checked')).map(checkbox => checkbox.nextSibling.textContent.trim());
+        setSelectedCategories(categories);
+    }
+
+    const formattedDate = (date) =>{
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const formatDate = `${year}-${month}-${day}`;
+
+        return formatDate;
+    }
+
+    const getCategoryUri = async (categoryArr) =>{
+        const arr = ['Business', 'Entertainment'];
+        const catergoryUri = [];
+        try{
+            await Promise.all(
+                categoryArr.map(async (val) =>{
+                let uri = await axios.post("http://eventregistry.org/api/v1/suggestCategoriesFast",{
+                "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
+                "prefix": val,
+                "page": 1,
+                "count": 20,
+                "articleBodyLen": -1
+              });
+              if(uri.data){
+                catergoryUri.push(uri.data[0].uri)
+              }
+              console.log(uri)
+            })
+            );
+            return catergoryUri;
+        }catch(error){
+            console.log(error)
+        }  
+    }
+
+    const getSourceUri = async (source) =>{
+        try{
+                let uri = await axios.post("http://eventregistry.org/api/v1/suggestSourcesFast",{
+                "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
+                "prefix": source,
+                "page": 1,
+                "count": 20,
+                "articleBodyLen": -1
+              });
+              if(uri.data){
+                console.log(uri)
+                return uri.data[0].uri;
+              }
+        }catch(error){
+            console.log(error)
+        }  
     }
 
     const getSources = async () =>{
-        const arr = ['Bussiness', 'Entertainment'];
-        arr.map(async (item) =>{
-            const res = await axios.get(`https://newsapi.org/v2/top-headlines/sources?category=${item}&apiKey=1e5458209dfa4d7abaf5a58f413292ac`);
-            console.log(res)  
-            if(res.status === 200){
-                let sourceArr = []
-                if(res.data.sources.length > 0){
-                    res.data.sources.map((item)=>{
-                        sourceArr.push({name: item.name, id: item.id});
-                    })
+        const arr = ['Business', 'Entertainment'];
+        let sourceArr = [];
+        if(selectedDataSource === 'NewsAPI.org'){
+        await Promise.all(
+            selectedCategories.map(async (item) => {
+              const res = await axios.get(`https://newsapi.org/v2/top-headlines/sources?category=${item}&apiKey=${newsApiKey}`);
+              if (res.status === 200) {
+                if (res.data.sources.length > 0) {
+                  res.data.sources.map((item) => {
+                    sourceArr.push({ name: item.name, id: item.id });
+                  });
                 }
-                setSources([...sourceArr, ...sources])
-            }
-        })
-        // const res = await axios.get(`https://newsapi.org/v2/top-headlines/sources?category=${categories}&apiKey=1e5458209dfa4d7abaf5a58f413292ac`);
-        // console.log(res,categories)
+              }
+            })
+          );
+        }
+        if(selectedDataSource === 'NewsAPI.ai'){
+            const res = await axios.post(`http://eventregistry.org/api/v1/suggestSourcesFast`,{
+                "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
+                "prefix": ""
+              });
+              console.log(res)
+              if (res.status === 200) {
+                if (res.data.length > 0) {
+                  res.data.map((item) => {
+                    sourceArr.push({ name: item.title, id: item.uri });
+                  });
+                }
+              }
+        }
+        if(sourceArr.length > 0) {
+            setSelectedSource(sourceArr[0].id);
+        setSources([...sourceArr]);
+    }
     }
 
     const logout = async () =>{
@@ -121,44 +300,44 @@ function Home() {
             'Authorization': `Bearer ${token}`,
           };
   
-        const url = `https://2c03-112-196-51-235.ngrok-free.app/backend-laravel-api/api/logout`;
-        const res = await axios.post(url, {}, {
-            headers
-        });
-        console.log(res)
+        const url = baseUrl + `/api/logout`;
+        // const res = await axios.post(url, {}, {
+        //     headers
+        // });
+        console.log( url)
     }
 
     const saveSettings = async () =>{
         const categories = Array.from(document.querySelectorAll('input[name="preferences"]:checked')).map(checkbox => checkbox.nextSibling.textContent.trim());
     
-        const dataSource = document.querySelector('input[name="dataSource"]:checked').nextSibling.textContent.trim();
+        const dataSource = document.querySelector('input[name="dataSource"]:checked') ? document.querySelector('input[name="dataSource"]:checked').nextSibling.textContent.trim() : null;
 
-        const baseUrl = `https://2c03-112-196-51-235.ngrok-free.app/backend-laravel-api`;
+        const baseUrl = `https://df45-112-196-51-235.ngrok-free.app`;
         let token = JSON.parse(localStorage.getItem("token"));
         const user = JSON.parse(localStorage.getItem("user"));
         const headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
           };
-
+        if(categories.length>0 && dataSource){
         const {data: preference} = await axios.post(baseUrl + '/api/users/preferences', {
             data: categories,
             user_id: user.id
         }, {headers})
-        console.log(preference)
         const {data: source} = await axios.post(baseUrl + '/api/users/settings', {
                 "datasource":dataSource,
-                "datasource_id":"news_apqi",
-                "user_id" :user.id
-                    
+                "datasource_id":"news_app",
+                "user_id" :user.id       
         }, {headers})
-        console.log(source)
         if(preference.success && source.success){
             setShowPopup(false);
             setSelectedDataSource(dataSource);
             setSelectedCategories(categories)
             setCheckedPreferences(categories);
         }
+     }else{
+        alert("Please select atleast one Category and Data Source")
+     }
     }
 
     const markChecked = () =>{
@@ -166,7 +345,6 @@ function Home() {
             const checkbox = document.querySelector(`input[name="categories"][value="${category}"]`);
             const prefered = document.querySelector(`input[name="preferences"][value="${category}"]`);
 
-            // console.log(checkbox, document.querySelector(`input[name="categories"]`))
             if (checkbox) {
               checkbox.checked = true;
             }
@@ -174,23 +352,30 @@ function Home() {
                 prefered.checked = true;
               }
           });
+          if(showPopup && selectedDataSource !== ''){
+            const datasource = document.querySelector(`input[name="dataSource"][value="${selectedDataSource}"]`);
+            if(datasource){
+                datasource.checked = true;
+            }
+          }
     }
 
-    console.log(checkedPreferences, selectedDataSource, sources, selectedSource)
-
+  if(isLoading){
+    return (<div className='preferences'>Loading{" "}<Spinner animation="border" variant="primary" /></div>)
+  }else{
   return (
     <div>
       <div id="wrapper">
         <header className="tech-header">
             <section className='container'>
-                <span><a href="">News App</a></span><nav><a href="">Home</a><a onClick={()=>{setShowPopup(true)}}>Settings</a><a href="">Logout</a></nav>
+                <span><a href="">News App</a></span><nav><a href="">Home</a><a onClick={()=>{setShowPopup(true)}}>Settings</a><a onClick={logout}>Logout</a></nav>
             </section>
         </header>
 
         <section className="section first-section">
             <div className="container-fluid">
                 <div className="masonry-blog clearfix">
-                    {
+                    {topNews && topNews.length > 0 &&
                         topNews.map((item,index) =>{
                             return(
                                 <div 
@@ -198,14 +383,45 @@ function Home() {
                                                          : index ===1 ? "second-slot" 
                                                                       : "last-slot"}`}>
                         <div className="masonry-box post-media">
-                             <img src={item.urlToImage} alt="" className="img-fluid" />
+                             <img src={
+                                                    selectedDataSource ===
+                                                    "NewsAPI.org"
+                                                      ? item.urlToImage
+                                                      : selectedDataSource ===
+                                                        "NY Times"
+                                                      ? item.multimedia.length >
+                                                        0
+                                                        ? "https://www.nytimes.com/" + item.multimedia[0].url
+                                                        : ""
+                                                      : item.image
+                                                  } alt="top news" className="img-fluid" />
                              <div className="shadoweffect">
                                 <div className="shadow-desc">
                                     <div className="blog-meta">
-                                        <span className="bg-orange"><a href="tech-category-01.html" title="">{item.source.name}</a></span>
-                                        <h4><a href={item.url} title="">{item.title}</a></h4>
-                                        <small>{item.publishedAt.slice(0,10)}</small>
-                                        <small>by {item.author}</small>
+                                        <span className="bg-orange"><a title="">{selectedDataSource ===
+                                                "NewsAPI.org"
+                                                  ? item.source.name
+                                                  : selectedDataSource ===
+                                                  "NY Times" ? item.source :item.source.title}</a></span>
+                                        <h4><a href={selectedDataSource ===
+                                                        "NY Times" ? item.web_url :item.url} title="">{selectedDataSource ===
+                                                            "NY Times" ? item.headline.main : item.title.slice(0, 100)}</a></h4>
+                                        <small>{selectedDataSource ===
+                                              "NewsAPI.org"
+                                                ? item.publishedAt.slice(0, 10)
+                                                : selectedDataSource ===
+                                                "NY Times" ? item.pub_date.slice(0, 10) :item.dateTimePub.slice(0, 10)}</small>
+                                     {selectedDataSource ===
+                                            "NewsAPI.org" ? (
+                                              <small>by {item.author}</small>
+                                            ) : selectedDataSource ===
+                                            "NY Times" ? item.byline.original : item.authors.length > 0 ? (
+                                              <small>
+                                                by {item.authors[0].name}
+                                              </small>
+                                            ) : (
+                                              ""
+                                            )}
                                     </div>
                                 </div>
                             </div>
@@ -214,7 +430,7 @@ function Home() {
                             )
                         })
                     }
-                     <div className="first-slot">
+                     {/* <div className="first-slot">
                         <div className="masonry-box post-media">
                              <img src="upload/tech_01.jpg" alt="" className="img-fluid" />
                              <div className="shadoweffect">
@@ -228,7 +444,7 @@ function Home() {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> */}
 
                 </div>
                 
@@ -246,14 +462,13 @@ function Home() {
                         </section>
                         <section>
                             <h6>Category</h6>
-
-                            <label><input type='checkbox' name='categories' value="Bussiness" /> Bussiness</label>
-                    <label><input type='checkbox' name='categories' value="Entertainment" /> Entertainment</label>
-                    <label><input type='checkbox' name='categories' value="General" /> General</label>
-                    <label><input type='checkbox' name='categories' value="Health" /> Health</label>
-                    <label><input type='checkbox' name='categories' value="Science" /> Science</label>
-                    <label><input type='checkbox' name='categories' value="Sports" /> Sports</label>
-                    <label><input type='checkbox' name='categories' value="Technology" /> Technology</label>
+                            <label><input type='checkbox' name='categories' value="Bussiness" onChange={filterCategory} /> Bussiness</label>
+                            <label><input type='checkbox' name='categories' value="Entertainment" onChange={filterCategory} /> Entertainment</label>
+                            <label><input type='checkbox' name='categories' value="General" onChange={filterCategory} /> General</label>
+                            <label><input type='checkbox' name='categories' value="Health" onChange={filterCategory} /> Health</label>
+                            <label><input type='checkbox' name='categories' value="Science" onChange={filterCategory} /> Science</label>
+                            <label><input type='checkbox' name='categories' value="Sports" onChange={filterCategory} /> Sports</label>
+                            <label><input type='checkbox' name='categories' value="Technology" onChange={filterCategory} /> Technology</label>
                         </section>
                         <section>
                             <label>Source</label>
@@ -264,29 +479,27 @@ function Home() {
                                         <option value={item.id}>{item.name}</option>
                                     )
                                 })
-                            }
-                            
+                            } 
                             </select>
                         </section>
-                        <section>
+                        {/* <section>
                             <label>Authors</label>
                             <select>
                                 <option>Sam</option>
                                 <option>Anderson</option>
                                 <option>Quito</option>
                             </select>
-                        </section>
+                        </section> */}
                         <section>
                             <label>Date</label>
-                            <input type="text" placeholder='From'/>
-                            <input type="text" placeholder='To'/>
+                            <DatePicker placeholderText="From" dateFormat="yyyy/MM/dd" selected={startDate} onChange={(date) => setStartDate(date)} />
+                            <DatePicker placeholderText="To" dateFormat="yyyy/MM/dd" selected={endDate} onChange={(date) => setEndDate(date)} />
                             </section>
 
-                        <section><button>Filter</button></section>
+                        <section><button onClick={fetchData}>Filter</button></section>
                     </div>
-                        <div className="sidebar">
-                       
 
+                        <div className="sidebar">
                             <div className="widget">
                                 <h2 className="widget-title">Popular News</h2>
                                 <div className="trend-videos">
@@ -338,8 +551,6 @@ function Home() {
                                 </div>
                             </div>
 
-                           
-
                             <div className="widget">
                                 <h2 className="widget-title">Follow Us</h2>
 
@@ -382,33 +593,89 @@ function Home() {
                                 <h4 className="pull-left">Recent News <a href="#"><i className="fa fa-rss"></i></a></h4>
                             </div>
                             <div className="blog-list clearfix">
-                                {data && data.map((item, index) =>{
-                                    return(
-                                        <>
+                                {data && data.length > 0 ? data.map((item, index) =>{
+                                    return (
+                                      <div key={index}>
                                         <div className="blog-box row">
-                                    <div className="col-md-4">
-                                        <div className="post-media">
-                                            <a href="tech-single.html" title="">
-                                                <img src={item.urlToImage} alt="" className="img-fluid" />
+                                          <div className="col-md-4">
+                                            <div className="post-media">
+                                              <a
+                                                href="tech-single.html"
+                                                title=""
+                                              >
+                                                <img
+                                                  src={
+                                                    selectedDataSource ===
+                                                    "NewsAPI.org"
+                                                      ? item.urlToImage
+                                                      : selectedDataSource ===
+                                                        "NY Times"
+                                                      ? item.multimedia.length >
+                                                        0
+                                                        ? "https://www.nytimes.com/" + item.multimedia[0].url
+                                                        : ""
+                                                      : item.image
+                                                  }
+                                                  alt="image"
+                                                  className="img-fluid"
+                                                />
                                                 <div className="hovereffect"></div>
-                                            </a>
-                                        </div>
-                                    </div>
+                                              </a>
+                                            </div>
+                                          </div>
 
-                                    <div className="blog-meta big-meta col-md-8">
-                                        <h4><a href={item.url} title="">{item.title}</a></h4>
-                                        <p>{item.description}</p>
-                                        <small className="firstsmall"><a className="bg-orange" href="tech-category-01.html" title="">{item.source.name}</a></small>
-                                        <small>{item.publishedAt.slice(0,10)}</small>
-                                        <small>by {item.author}</small>
-                                    </div>
-                                </div>
-                                <hr className="invis" />
-                                </>
-                                    )
-                                })}
+                                          <div className="blog-meta big-meta col-md-8">
+                                            <h4>
+                                              <a href={selectedDataSource ===
+                                                        "NY Times" ? item.web_url :item.url} title="">
+                                                {selectedDataSource ===
+                                                        "NY Times" ? item.headline.main : item.title.slice(0, 100)}
+                                              </a>
+                                            </h4>
+                                            <p>
+                                              {selectedDataSource ===
+                                              "NewsAPI.org"
+                                                ? item.description
+                                                : selectedDataSource ===
+                                                "NY Times" ? item.abstract.slice(0, 150) : item.body.slice(0, 150)}
+                                            </p>
+                                            <small className="firstsmall">
+                                              <a className="bg-orange">
+                                                {selectedDataSource ===
+                                                "NewsAPI.org"
+                                                  ? item.source.name
+                                                  : selectedDataSource ===
+                                                  "NY Times" ? item.source :item.source.title}
+                                              </a>
+                                            </small>
+                                            <small>
+                                              {selectedDataSource ===
+                                              "NewsAPI.org"
+                                                ? item.publishedAt.slice(0, 10)
+                                                : selectedDataSource ===
+                                                "NY Times" ? item.pub_date.slice(0, 10) :item.dateTimePub.slice(0, 10)}
+                                            </small>
+                                            {selectedDataSource ===
+                                            "NewsAPI.org" ? (
+                                              <small>by {item.author}</small>
+                                            ) : selectedDataSource ===
+                                            "NY Times" ? item.byline.original : item.authors.length > 0 ? (
+                                              <small>
+                                                by {item.authors[0].name}
+                                              </small>
+                                            ) : (
+                                              ""
+                                            )}
+                                          </div>
+                                        </div>
+                                        <hr className="invis" />
+                                      </div>
+                                    );
+                                }) : (
+                                    <>
                                 <div className="blog-box row">
-                                    <div className="col-md-4">
+                                    No Data
+                                    {/* <div className="col-md-4">
                                         <div className="post-media">
                                             <a href="tech-single.html" title="">
                                                 <img src="upload/tech_blog_01.jpg" alt="" className="img-fluid" />
@@ -423,28 +690,25 @@ function Home() {
                                         <small className="firstsmall"><a className="bg-orange" href="tech-category-01.html" title="">Name</a></small>
                                         <small>XX-XX-XXXX</small>
                                         <small>by XYZ</small>
-                                        {/* <small><a href="tech-single.html" title=""><i className="fa fa-eye"></i> 1114</a></small> */}
-                                    </div>
+                                    </div> */}
                                 </div>
                                 <hr className="invis" />
+                                </>
+                                )}
                             </div>
                         </div>
 
                         <hr className="invis" />
 
-                        <button onClick={logout}>
-                                Logout
-                            </button>
-
                         <div className="row">
                             <div className="col-md-12">
                                 <nav aria-label="Page navigation">
                                     <ul className="pagination justify-content-start">
-                                        <li className="page-item"><a className="page-link" href="#">1</a></li>
-                                        <li className="page-item"><a className="page-link" href="#">2</a></li>
-                                        <li className="page-item"><a className="page-link" href="#">3</a></li>
+                                        <li className="page-item" onClick={()=>{ setCurrentPage(1)}}><a className="page-link">1</a></li>
+                                        <li className="page-item" onClick={()=>{ setCurrentPage(2)}}><a className="page-link">2</a></li>
+                                        <li className="page-item" onClick={()=>{ setCurrentPage(3)}}><a className="page-link">3</a></li>
                                         <li className="page-item" onClick={()=>{ setCurrentPage(currentPage+1)}}>
-                                            <a className="page-link" href="#">Next</a>
+                                            <a className="page-link">Next</a>
                                         </li>
                                     </ul>
                                 </nav>
@@ -459,30 +723,33 @@ function Home() {
         {showPopup && 
         <div className='preferences'>
             <section>
-                <h4>Select Your Preferences</h4>
+            <h4>{selectedCategories.length > 0 ? "Change" : "Select" } Your Preferences</h4>
+
+                <h5>{selectedCategories.length > 0 ? "Change" : "Select" } Your Categories</h5>
                 <div className='allDetail'>
-                    <label><input type='checkbox' name='preferences'/> Bussiness</label>
-                    <label><input type='checkbox' name='preferences'/> Entertainment</label>
-                    <label><input type='checkbox' name='preferences'/> General</label>
-                    <label><input type='checkbox' name='preferences'/> Health</label>
-                    <label><input type='checkbox' name='preferences'/> Science</label>
-                    <label><input type='checkbox' name='preferences'/> Sports</label>
-                    <label><input type='checkbox' name='preferences'/> Technology</label>
+                    <label><input type='checkbox' name='preferences' value="Bussiness" /> Bussiness</label>
+                    <label><input type='checkbox' name='preferences' value="Entertainment" /> Entertainment</label>
+                    <label><input type='checkbox' name='preferences' value="General" /> General</label>
+                    <label><input type='checkbox' name='preferences' value="Health" /> Health</label>
+                    <label><input type='checkbox' name='preferences' value="Science" /> Science</label>
+                    <label><input type='checkbox' name='preferences' value="Sports" /> Sports</label>
+                    <label><input type='checkbox' name='preferences' value="Technology" /> Technology</label>
                     </div>
-                    <h5>Select Your Data Source</h5>
+                    <h5>{selectedCategories.length > 0 ? "Change" : "Select" } Your News Data API</h5>
                     <div className='selectRadio allDetail'>
-                    <label><input type='radio' id='dataSource-1'  name='dataSource'/> Best</label>  
-                    <label><input type='radio' id='dataSource-2'  name='dataSource'/> My Designs</label>  
-                    <label><input type='radio' id='dataSource-3'  name='dataSource'/> Check</label>  
+                    <label><input type='radio' id='dataSource-1'  name='dataSource' value="NewsAPI.org"/> NewsAPI.org</label>  
+                    <label><input type='radio' id='dataSource-2'  name='dataSource' value="NewsAPI.ai"/> NewsAPI.ai</label>  
+                    <label><input type='radio' id='dataSource-3'  name='dataSource' value="NY Times"/> NY Times</label>  
                     </div>
                     <button onClick={saveSettings}>Save</button>
-                    <button className='closePop' onClick={()=>{setShowPopup(false)}}>Cancel</button>
+                    {selectedCategories.length > 0 && <button className='closePop' onClick={()=>{setShowPopup(false)}}>Cancel</button>}
             </section>
         </div>}
         <div className="dmtop">Scroll to Top</div>
     </div>
     </div>
   )
+}
 }
 
 export default Home;

@@ -30,7 +30,7 @@ function SignUp() {
       const handleLogin = async (e) => {
         e.preventDefault();
         try {
-          const url = "https://2c03-112-196-51-235.ngrok-free.app/backend-laravel-api/api/users";
+          const url = "https://df45-112-196-51-235.ngrok-free.app/api/users";
           const {data:res} = await axios.post(url, data);
           console.log(res);
           // console.log(data)
