@@ -1,12 +1,12 @@
 import logo from './logo.svg';
 import './App.css';
-import {Routes, Route} from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import SignIn from './components/auth/signin';
 import SignUp from './components/auth/signup';
 import Home from './components/home';
 
 function App() {
-  let baseUrl = `http://192.168.0.106`;
+  let baseUrl = `http://localhost:80`;
   return (
     <div className="App">
       <Routes>
