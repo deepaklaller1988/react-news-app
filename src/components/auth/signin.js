@@ -5,7 +5,7 @@ import Form from "react-bootstrap/Form";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 
-function SignIn() {
+function SignIn({baseUrl}) {
     const [data, setData] = useState({
         email: "",
         password: "",
@@ -27,7 +27,7 @@ function SignIn() {
       const handleLogin = async (e) => {
         e.preventDefault();
         try {
-          const url = "https://df45-112-196-51-235.ngrok-free.app/api/login";
+          const url = baseUrl + "/api/login";
           const { data: res } = await axios.post(url, data);
           console.log(res);
           if (res.success) {

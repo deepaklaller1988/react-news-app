@@ -3,19 +3,16 @@ import './App.css';
 import {Routes, Route} from 'react-router-dom';
 import SignIn from './components/auth/signin';
 import SignUp from './components/auth/signup';
-import Settings from './components/account/settings';
 import Home from './components/home';
 
 function App() {
+  let baseUrl = `http://192.168.0.106`;
   return (
     <div className="App">
       <Routes>
-        <Route path='/' element={<SignIn />} />
-        <Route path='/signup' element={<SignUp />} />
-        <Route path='/settings' element={<Settings />} />
-        <Route path='/home' element={<Home />} />
-
-
+        <Route path='/' element={<SignIn baseUrl={baseUrl} />} />
+        <Route path='/signup' element={<SignUp baseUrl={baseUrl} />} />
+        <Route path='/home' element={<Home baseUrl={baseUrl} />} />
       </Routes>
     </div>
   );

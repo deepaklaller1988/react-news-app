@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './home.css'
 import axios from 'axios';
 import { useNavigate, Link } from "react-router-dom";
@@ -7,10 +7,9 @@ import Spinner from 'react-bootstrap/Spinner';
 
 import "react-datepicker/dist/react-datepicker.css";
 
-let baseUrl = `https://df45-112-196-51-235.ngrok-free.app`;
 let newsApiKey = "2316c55266114746a2ffd15b9237082f";
 
-function Home() {
+function Home({baseUrl}) {
     const [data,setData] = useState([]);
     const [pageCount,setPageCount] = useState(0);
     const [currentPage,setCurrentPage] = useState(1);
@@ -20,13 +19,13 @@ function Home() {
     const [checkedPreferences, setCheckedPreferences] = useState([]);
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [sources, setSources] = useState([]);
-    const [selectedDataSource, setSelectedDataSource] = useState('NewsAPI.ai');
+    const [selectedDataSource, setSelectedDataSource] = useState('');
     const [selectedSource, setSelectedSource] = useState();
     const [search, setSearch] = useState('')
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
 
-    const [isLoading,setIsLoading] = useState(false);
+    const [isLoading,setIsLoading] = useState(true);
 
     const navigate = useNavigate();
 
@@ -35,7 +34,6 @@ function Home() {
         if(token){
             setAccessToken(token);
             getPreferences(token);
-            // getSources();
         }else{
             navigate("/");
         }
@@ -44,20 +42,24 @@ function Home() {
 
     useEffect(()=>{
         fetchData();
-    },[currentPage, search])
+    },[currentPage, search, selectedDataSource])
 
     useEffect(()=>{
         if(selectedCategories.length > 0){
-            markChecked();
+            // markChecked();
             getSources();
         }
     },[selectedCategories])
 
     useEffect(() =>{
-        if(showPopup && selectedSource !== ''){
-            markChecked();
+        if(data.length > 0){
+            setIsLoading(false);
         }
-    },[showPopup])
+    }, [data])
+
+    useEffect(()=>{
+        markChecked()
+    })
 
     const getPreferences = async (token) =>{
         const user = JSON.parse(localStorage.getItem("user"));
@@ -66,22 +68,39 @@ function Home() {
             "Authorization": `Bearer ${token}`,
           };
   
-        const {data:res} = await axios.post(baseUrl + `/api/users/${user.id}/preferences`,{},{headers});
-        const {data:source} = await axios.post(baseUrl + `/api/users/${user.id}/settings`,{},{headers});
+          fetch(baseUrl + `/api/users/${user.id}/preferences`, {
+            method: 'GET',
+            headers: headers,
+          })
+            .then(response => response.json())
+            .then(res => {
+              fetch(baseUrl + `/api/users/${user.id}/settings`, {
+                method: 'GET',
+                headers: headers,
+              })
+                .then(response => response.json())
+                .then(source => {
 
-        if(res.success && source.success){
-            if(res.data.length === 0 && !source.data){
-                setShowPopup(true);
-            }else{
-                if(JSON.parse(res.data[0].data).length === 0){
-                    setShowPopup(true);
-                }
-                setIsLoading(false);
-                setCheckedPreferences(JSON.parse(res.data[0].data));
-                setSelectedCategories(JSON.parse(res.data[0].data));
-                setSelectedDataSource(source.data.datasource);
-            }
-        }
+                  if (res.success && source.success) {
+                    if (res.data.length === 0 && !source.data) {
+                      setShowPopup(true);
+                    } else {
+                      if (JSON.parse(res.data[0].data).length === 0) {
+                        setShowPopup(true);
+                      }
+                      setCheckedPreferences(JSON.parse(res.data[0].data));
+                      setSelectedCategories(JSON.parse(res.data[0].data));
+                      setSelectedDataSource(source.data.datasource);
+                    }
+                  }
+                })
+                .catch(error => {
+                  console.error(error);
+                });
+            })
+            .catch(error => {
+              console.error(error);
+            });
     }
 
     const fetchData = async () =>{
@@ -96,6 +115,8 @@ function Home() {
         
         const res = await axios.get(`https://newsapi.org/v2/everything?q=${search}&sources=${selectedSource ? selectedSource : "abc-news"}&from=${startdate}&to=${enddate}&page=${currentPage}&pageSize=10&apiKey=${newsApiKey}`)
         if(res.status === 200){
+            setIsLoading(true)
+            setSources([]);
             setData(res.data.articles)
             if( res.data.totalResults >= 100){
                 setPageCount(Math.ceil(100/10))
@@ -107,13 +128,11 @@ function Home() {
 
         if(selectedDataSource === 'NewsAPI.ai'){
             const categoryUri = await getCategoryUri(selectedCategories);
-            // const sourceUri = selectedSource ? await getSourceUri(selectedSource) : null;
-            // const sourceUri =  await getSourceUri("bbc")
 
         let requestBody = {
             "action": "getArticles",
             "categoryUri": categoryUri,
-            "articlesPage": 1,
+            "articlesPage": currentPage,
             "articlesCount": 100,
             "articlesSortBy": "date",
             "articlesSortByAsc": false,
@@ -145,9 +164,10 @@ function Home() {
           }
         
         const res = await axios.post(`http://eventregistry.org/api/v1/article/getArticles`,requestBody)
-          console.log(res)
         if(res.status === 200){
             if(res.data.articles){ 
+                setIsLoading(true);
+                setSources([]);
                 setData(res.data.articles.results)
                 setTopNews(res.data.articles.results.slice(0,3))
             if( res.data.articles.totalResults >= 100){
@@ -155,12 +175,11 @@ function Home() {
             }else{
                 setPageCount(Math.ceil(res.data.totalResults/10))
             } }
-        }
+            }
         }
 
         if(selectedDataSource === 'NY Times'){
-            const arr1 = ['Business', 'Sports'];
-            const arr = arr1.map((val)=>{
+            const arr = selectedCategories.map((val)=>{
                 if(val === 'Entertainment'){
                     return 'Movies'
                 }else if(val === 'General'){
@@ -169,31 +188,44 @@ function Home() {
                     return val
                 }
             })
-            const baseUrl = 'https://api.nytimes.com/svc/search/v2/articlesearch.json';
+            const baseUrlNyTimes = 'https://api.nytimes.com/svc/search/v2/articlesearch.json';
             const params = {
-                fq: "section_name:Business",
                 fq: arr.map((category) => `news_desk:("${category}")`).join(' OR '),
                 // sort: 'newest',
+                page: currentPage,
                 "api-key": "AL5jWbBj302O6hoBEoswtihKPBEG37Te",
             };
+            if(search !== ''){
+                params.q = search
+              }
+            if(startdate !== ''){
+                params.begin_date = startdate.split('-').join("");
+              }
+    
+            if(enddate !== ''){
+                params.end_date = enddate.split('-').join("")
+              }
 
-  try {
-    const res = await axios.get(baseUrl, { params });
-    console.log(res)
-    if(res.status === 200){
-        if(res.data.response.docs){ 
-            setData(res.data.response.docs)
-            setTopNews(res.data.response.docs.slice(0,3))
-        if( res.data.response.docs.length >= 100){
-            setPageCount(Math.ceil(100/10))
-        }else{
-            setPageCount(Math.ceil(res.data.totalResults/10))
-        } }
-    }
-    // setArticles(response.data.response.docs);
-  } catch (error) {
-    console.error('Error fetching articles:', error);
-  }
+            if(selectedSource !== ''){
+                params.fq = selectedSource
+              }
+            try {
+                const res = await axios.get(baseUrlNyTimes, { params });
+                if(res.status === 200){
+                    if(res.data.response.docs){ 
+                        setIsLoading(true);
+                        setSources([]);
+                        setData(res.data.response.docs);
+                        setTopNews(res.data.response.docs.slice(0,3));
+                    if( res.data.response.docs.length >= 100){
+                        setPageCount(Math.ceil(100/10));
+                    }else{
+                        setPageCount(Math.ceil(res.data.totalResults/10));
+                    } }
+                }
+            } catch (error) {
+                console.error('Error fetching articles:', error);
+            }
         }
 
     }
@@ -204,7 +236,7 @@ function Home() {
     }
 
     const formattedDate = (date) =>{
-        const year = date.getFullYear();
+        const year = String(date.getFullYear());
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
         const formatDate = `${year}-${month}-${day}`;
@@ -228,28 +260,9 @@ function Home() {
               if(uri.data){
                 catergoryUri.push(uri.data[0].uri)
               }
-              console.log(uri)
             })
             );
             return catergoryUri;
-        }catch(error){
-            console.log(error)
-        }  
-    }
-
-    const getSourceUri = async (source) =>{
-        try{
-                let uri = await axios.post("http://eventregistry.org/api/v1/suggestSourcesFast",{
-                "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
-                "prefix": source,
-                "page": 1,
-                "count": 20,
-                "articleBodyLen": -1
-              });
-              if(uri.data){
-                console.log(uri)
-                return uri.data[0].uri;
-              }
         }catch(error){
             console.log(error)
         }  
@@ -277,7 +290,6 @@ function Home() {
                 "apiKey": "619449db-6249-45ff-992e-d9d8284a92c3",
                 "prefix": ""
               });
-              console.log(res)
               if (res.status === 200) {
                 if (res.data.length > 0) {
                   res.data.map((item) => {
@@ -290,6 +302,40 @@ function Home() {
             setSelectedSource(sourceArr[0].id);
         setSources([...sourceArr]);
     }
+    if(selectedDataSource === 'NY Times'){
+        const arr = selectedCategories.map((val)=>{
+            if(val === 'Entertainment'){
+                return 'Movies'
+            }else if(val === 'General'){
+                return 'Favorites'
+            }else{
+                return val
+            }
+        })
+        const baseUrlNyTimes = 'https://api.nytimes.com/svc/search/v2/articlesearch.json';
+        const params = {
+            fq: arr.map((category) => `news_desk:("${category}")`).join(' OR '),
+            page: currentPage,
+            "api-key": "AL5jWbBj302O6hoBEoswtihKPBEG37Te",
+        };
+        try {
+            let src = [];
+            const res = await axios.get(baseUrlNyTimes, { params });
+            if(res.status === 200){
+                if(res.data.response.docs){ 
+                    await Promise.all(
+                    res.data.response.docs.map((val)=>{
+                        if (!src.includes(val.source)) {
+                            src.push(val.source);
+                          }
+                    }));
+                    setSources(src);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching articles:', error);
+        }
+    }
     }
 
     const logout = async () =>{
@@ -301,10 +347,18 @@ function Home() {
           };
   
         const url = baseUrl + `/api/logout`;
-        // const res = await axios.post(url, {}, {
-        //     headers
-        // });
-        console.log( url)
+        try{
+            const {data: res} = await axios.get(url, {
+                    headers
+                });
+                if(res.success){
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("user");
+                    navigate("/");
+                }
+        }catch(error){
+            console.log( error)
+        }
     }
 
     const saveSettings = async () =>{
@@ -312,14 +366,14 @@ function Home() {
     
         const dataSource = document.querySelector('input[name="dataSource"]:checked') ? document.querySelector('input[name="dataSource"]:checked').nextSibling.textContent.trim() : null;
 
-        const baseUrl = `https://df45-112-196-51-235.ngrok-free.app`;
         let token = JSON.parse(localStorage.getItem("token"));
         const user = JSON.parse(localStorage.getItem("user"));
         const headers = {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${accessToken}`,
           };
         if(categories.length>0 && dataSource){
+            try{
         const {data: preference} = await axios.post(baseUrl + '/api/users/preferences', {
             data: categories,
             user_id: user.id
@@ -331,9 +385,13 @@ function Home() {
         }, {headers})
         if(preference.success && source.success){
             setShowPopup(false);
+            setIsLoading(true);
             setSelectedDataSource(dataSource);
             setSelectedCategories(categories)
             setCheckedPreferences(categories);
+        }
+        }catch(error){
+            console.error(error)        
         }
      }else{
         alert("Please select atleast one Category and Data Source")
@@ -343,11 +401,12 @@ function Home() {
     const markChecked = () =>{
         selectedCategories.forEach(category => {
             const checkbox = document.querySelector(`input[name="categories"][value="${category}"]`);
-            const prefered = document.querySelector(`input[name="preferences"][value="${category}"]`);
-
             if (checkbox) {
               checkbox.checked = true;
             }
+          });
+          checkedPreferences.forEach(category => {
+            const prefered = document.querySelector(`input[name="preferences"][value="${category}"]`);
             if (prefered) {
                 prefered.checked = true;
               }
@@ -361,14 +420,14 @@ function Home() {
     }
 
   if(isLoading){
-    return (<div className='preferences'>Loading{" "}<Spinner animation="border" variant="primary" /></div>)
+    return (<div className='preferences'><Spinner animation="border" variant="primary" /></div>)
   }else{
   return (
     <div>
       <div id="wrapper">
         <header className="tech-header">
             <section className='container'>
-                <span><a href="">News App</a></span><nav><a href="">Home</a><a onClick={()=>{setShowPopup(true)}}>Settings</a><a onClick={logout}>Logout</a></nav>
+                <span><a href="/home">News App</a></span><nav><a href="/home">Home</a><a onClick={()=>{setShowPopup(true)}}>Settings</a><a onClick={logout}>Logout</a></nav>
             </section>
         </header>
 
@@ -392,9 +451,9 @@ function Home() {
                                                       ? item.multimedia.length >
                                                         0
                                                         ? "https://www.nytimes.com/" + item.multimedia[0].url
-                                                        : ""
+                                                        : "upload/tech_01.jpg"
                                                       : item.image
-                                                  } alt="top news" className="img-fluid" />
+                                                  } alt="image failed to load" className="img-fluid" />
                              <div className="shadoweffect">
                                 <div className="shadow-desc">
                                     <div className="blog-meta">
@@ -415,7 +474,7 @@ function Home() {
                                             "NewsAPI.org" ? (
                                               <small>by {item.author}</small>
                                             ) : selectedDataSource ===
-                                            "NY Times" ? item.byline.original : item.authors.length > 0 ? (
+                                            "NY Times" ? <small> {item.byline.original}</small> : item.authors.length > 0 ? (
                                               <small>
                                                 by {item.authors[0].name}
                                               </small>
@@ -430,22 +489,6 @@ function Home() {
                             )
                         })
                     }
-                     {/* <div className="first-slot">
-                        <div className="masonry-box post-media">
-                             <img src="upload/tech_01.jpg" alt="" className="img-fluid" />
-                             <div className="shadoweffect">
-                                <div className="shadow-desc">
-                                    <div className="blog-meta">
-                                        <span className="bg-orange"><a href="tech-category-01.html" title="">Technology</a></span>
-                                        <h4><a href="tech-single.html" title="">Say hello to real handmade office furniture! Clean & beautiful design</a></h4>
-                                        <small><a href="tech-single.html" title="">24 July, 2017</a></small>
-                                        <small><a href="tech-author.html" title="">by Amanda</a></small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div> */}
-
                 </div>
                 
             </div>
@@ -472,24 +515,23 @@ function Home() {
                         </section>
                         <section>
                             <label>Source</label>
+                            
                             <select value={selectedSource} onChange={(e)=>{setSelectedSource(e.target.value)}}>
                             {
                                 sources && sources.map((item)=>{
-                                    return(
-                                        <option value={item.id}>{item.name}</option>
-                                    )
+                                        if(selectedDataSource === 'NY Times') {
+                                            return(
+                                                <option value={item}>{item}</option>
+                                            )
+                                        }else{
+                                            return(
+                                                <option value={item.id}>{item.name}</option>
+                                            )
+                                        }
                                 })
                             } 
                             </select>
                         </section>
-                        {/* <section>
-                            <label>Authors</label>
-                            <select>
-                                <option>Sam</option>
-                                <option>Anderson</option>
-                                <option>Quito</option>
-                            </select>
-                        </section> */}
                         <section>
                             <label>Date</label>
                             <DatePicker placeholderText="From" dateFormat="yyyy/MM/dd" selected={startDate} onChange={(date) => setStartDate(date)} />
@@ -503,51 +545,40 @@ function Home() {
                             <div className="widget">
                                 <h2 className="widget-title">Popular News</h2>
                                 <div className="trend-videos">
+                                {topNews && topNews.length > 0 &&
+                        topNews.map((item,index) =>{
+                            return(
+                                <>
                                     <div className="blog-box">
                                         <div className="post-media">
                                             <a href="tech-single.html" title="">
-                                                <img src="upload/tech_video_01.jpg" alt="" className="img-fluid" />
+                                                <img src={
+                                                    selectedDataSource ===
+                                                    "NewsAPI.org"
+                                                      ? item.urlToImage
+                                                      : selectedDataSource ===
+                                                        "NY Times"
+                                                      ? item.multimedia.length >
+                                                        0
+                                                        ? "https://www.nytimes.com/" + item.multimedia[0].url
+                                                        : "upload/tech_01.jpg"
+                                                      : item.image
+                                                  } alt="image" className="img-fluid" />
                                                 <div className="hovereffect">
                                                     <span className="videohover"></span>
                                                 </div>
                                             </a>
                                         </div>
                                         <div className="blog-meta">
-                                            <h4><a href="tech-single.html" title="">We prepared the best 10 laptop presentations for you</a></h4>
+                                            <h4><a href={selectedDataSource ===
+                                                        "NY Times" ? item.web_url :item.url} title="">{selectedDataSource ===
+                                                            "NY Times" ? item.headline.main : item.title.slice(0, 100)}</a></h4>
                                         </div>
                                     </div>
 
                                     <hr className="invis" />
-
-                                    <div className="blog-box">
-                                        <div className="post-media">
-                                            <a href="tech-single.html" title="">
-                                                <img src="upload/tech_video_02.jpg" alt="" className="img-fluid" />
-                                                <div className="hovereffect">
-                                                    <span className="videohover"></span>
-                                                </div>
-                                            </a>
-                                        </div>
-                                        <div className="blog-meta">
-                                            <h4><a href="tech-single.html" title="">We are guests of ABC Design Studio - Vlog</a></h4>
-                                        </div>
-                                    </div>
-
-                                    <hr className="invis" />
-
-                                    <div className="blog-box">
-                                        <div className="post-media">
-                                            <a href="tech-single.html" title="">
-                                                <img src="upload/tech_video_03.jpg" alt="" className="img-fluid" />
-                                                <div className="hovereffect">
-                                                    <span className="videohover"></span>
-                                                </div>
-                                            </a>
-                                        </div>
-                                        <div className="blog-meta">
-                                            <h4><a href="tech-single.html" title="">Both blood pressure monitor and intelligent clock</a></h4>
-                                        </div>
-                                    </div>
+                                    </>
+                            )})}
                                 </div>
                             </div>
 
@@ -613,7 +644,7 @@ function Home() {
                                                       ? item.multimedia.length >
                                                         0
                                                         ? "https://www.nytimes.com/" + item.multimedia[0].url
-                                                        : ""
+                                                        : "upload/tech_01.jpg"
                                                       : item.image
                                                   }
                                                   alt="image"
@@ -674,23 +705,7 @@ function Home() {
                                 }) : (
                                     <>
                                 <div className="blog-box row">
-                                    No Data
-                                    {/* <div className="col-md-4">
-                                        <div className="post-media">
-                                            <a href="tech-single.html" title="">
-                                                <img src="upload/tech_blog_01.jpg" alt="" className="img-fluid" />
-                                                <div className="hovereffect"></div>
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div className="blog-meta big-meta col-md-8">
-                                        <h4><a href="" title="">Top 10 phone applications and 2017 mobile design awards</a></h4>
-                                        <p>Aenean interdum arcu blandit, vehicula magna non, placerat elit. Mauris et pharetratortor. Suspendissea sodales urna. In at augue elit. Vivamus enim nibh, maximus ac felis nec, maximus tempor odio.</p>
-                                        <small className="firstsmall"><a className="bg-orange" href="tech-category-01.html" title="">Name</a></small>
-                                        <small>XX-XX-XXXX</small>
-                                        <small>by XYZ</small>
-                                    </div> */}
+                                    No Data Currently
                                 </div>
                                 <hr className="invis" />
                                 </>
