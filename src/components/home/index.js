@@ -7,7 +7,7 @@ import Spinner from 'react-bootstrap/Spinner';
 
 import "react-datepicker/dist/react-datepicker.css";
 
-let newsApiKey = "2316c55266114746a2ffd15b9237082f";
+let newsApiKey = "1e5458209dfa4d7abaf5a58f413292ac";
 
 function Home({baseUrl}) {
     const [data,setData] = useState([]);
@@ -42,7 +42,7 @@ function Home({baseUrl}) {
 
     useEffect(()=>{
         fetchData();
-    },[currentPage, search, selectedDataSource])
+    },[currentPage, search, selectedDataSource,checkedPreferences ])
 
     useEffect(()=>{
         if(selectedCategories.length > 0){
@@ -52,14 +52,13 @@ function Home({baseUrl}) {
     },[selectedCategories])
 
     useEffect(() =>{
-        if(data.length > 0){
             setIsLoading(false);
-        }
     }, [data])
 
     useEffect(()=>{
         markChecked()
     })
+
 
     const getPreferences = async (token) =>{
         const user = JSON.parse(localStorage.getItem("user"));
@@ -83,11 +82,13 @@ function Home({baseUrl}) {
 
                   if (res.success && source.success) {
                     if (res.data.length === 0 && !source.data) {
+                        // setIsLoading(false);
                       setShowPopup(true);
                     } else {
                       if (JSON.parse(res.data[0].data).length === 0) {
                         setShowPopup(true);
                       }
+                    //   setIsLoading(false);
                       setCheckedPreferences(JSON.parse(res.data[0].data));
                       setSelectedCategories(JSON.parse(res.data[0].data));
                       setSelectedDataSource(source.data.datasource);
@@ -106,6 +107,7 @@ function Home({baseUrl}) {
     const fetchData = async () =>{
         const startdate = startDate !== '' ? formattedDate(startDate) : '';
         const enddate = endDate !== '' ? formattedDate(endDate) : "";
+        // const source = selectedSource === 'dailymail.co.uk' ? abc-news 
 
         if(selectedDataSource === 'NewsAPI.org'){
         const headlines = await axios.get(`https://newsapi.org/v2/top-headlines?category=${selectedCategories.join(",")}&page=1&pageSize=10&apiKey=${newsApiKey}`);
@@ -113,9 +115,9 @@ function Home({baseUrl}) {
             setTopNews(headlines.data.articles.slice(0,3))
         }
         
-        const res = await axios.get(`https://newsapi.org/v2/everything?q=${search}&sources=${selectedSource ? selectedSource : "abc-news"}&from=${startdate}&to=${enddate}&page=${currentPage}&pageSize=10&apiKey=${newsApiKey}`)
+        const res = await axios.get(`https://newsapi.org/v2/everything?q=${search}&sources=${selectedSource ? selectedSource === 'dailymail.co.uk' ? "abc-news" : selectedSource : "abc-news"}&from=${startdate}&to=${enddate}&page=${currentPage}&pageSize=10&apiKey=${newsApiKey}`)
         if(res.status === 200){
-            setIsLoading(true)
+            // setIsLoading(true)
             setSources([]);
             setData(res.data.articles)
             if( res.data.totalResults >= 100){
@@ -166,7 +168,7 @@ function Home({baseUrl}) {
         const res = await axios.post(`http://eventregistry.org/api/v1/article/getArticles`,requestBody)
         if(res.status === 200){
             if(res.data.articles){ 
-                setIsLoading(true);
+                // setIsLoading(true);
                 setSources([]);
                 setData(res.data.articles.results)
                 setTopNews(res.data.articles.results.slice(0,3))
@@ -213,7 +215,6 @@ function Home({baseUrl}) {
                 const res = await axios.get(baseUrlNyTimes, { params });
                 if(res.status === 200){
                     if(res.data.response.docs){ 
-                        setIsLoading(true);
                         setSources([]);
                         setData(res.data.response.docs);
                         setTopNews(res.data.response.docs.slice(0,3));
@@ -245,7 +246,6 @@ function Home({baseUrl}) {
     }
 
     const getCategoryUri = async (categoryArr) =>{
-        const arr = ['Business', 'Entertainment'];
         const catergoryUri = [];
         try{
             await Promise.all(
@@ -269,7 +269,6 @@ function Home({baseUrl}) {
     }
 
     const getSources = async () =>{
-        const arr = ['Business', 'Entertainment'];
         let sourceArr = [];
         if(selectedDataSource === 'NewsAPI.org'){
         await Promise.all(
@@ -366,7 +365,6 @@ function Home({baseUrl}) {
     
         const dataSource = document.querySelector('input[name="dataSource"]:checked') ? document.querySelector('input[name="dataSource"]:checked').nextSibling.textContent.trim() : null;
 
-        let token = JSON.parse(localStorage.getItem("token"));
         const user = JSON.parse(localStorage.getItem("user"));
         const headers = {
             'Content-Type': 'application/json',
